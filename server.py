@@ -17,6 +17,7 @@ lock = threading.Lock()
 
 os.makedirs(BASE_DIR, exist_ok=True)
 
+
 def recv_line(conn):
     data = b""
     while not data.endswith(b"\n"):
@@ -216,10 +217,47 @@ def tcp_server():
                 conn.sendall(b"Server full\n")
                 conn.close()
                 continue
+
+
         threading.Thread(target=client_thread, args=(conn, addr, is_admin, username), daemon=True).start()
-    
+
+# HTTP SERVER
+class StatsHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        messages = None
+        try:
+            with lock:
+                with open(f"{BASE_DIR}/messages_log.txt", "r") as file:
+                    messages = [json.loads(line) for line in file]
+        except FileNotFoundError:
+            messages = []
+
+        if self.path == "/stats":
+            with lock:
+                data = {
+                    "clients": clients,
+                    "messages": messages
+                }
+
+            body = json.dumps(data)
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def http_server():
+    server = HTTPServer((HOST, HTTP_PORT), StatsHandler)
+    server.serve_forever()
+
 
 if __name__ == "__main__":
+    threading.Thread(target=http_server, daemon=True).start()
     tcp_server()
     while True:
         pass
